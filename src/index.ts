@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_COLOR, style_status } from "./color.ts";
-import { load_config } from "./config.ts";
+import { ensure_config, load_config } from "./config.ts";
 import { counted_tokens, matching_buckets, meter_text, type QuotaConfig } from "./quota.ts";
 import { balance_from_snapshot, debit_shared, read_state } from "./state.ts";
 
@@ -57,6 +57,7 @@ export default function quota_meter(pi: ExtensionAPI): void {
     active = false;
     warned = false;
     try {
+      await ensure_config(DIRECTORY);
       config = await load_config(DIRECTORY);
       active = true;
       if (ctx.hasUI) {

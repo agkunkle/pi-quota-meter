@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { access, link, mkdir, open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_COLOR, parse_color } from "./color.ts";
 import {
@@ -83,6 +83,55 @@ export function parse_config(value: unknown): QuotaConfig {
     color: value.color === undefined ? DEFAULT_COLOR : parse_color(value.color),
     refreshIntervalSeconds: refresh_interval as number,
   };
+}
+
+const STARTER_CONFIG = {
+  color: DEFAULT_COLOR,
+  refreshIntervalSeconds: 5,
+  buckets: {
+    example: {
+      capacity: 600_000,
+      refillPerMinute: 300_000,
+      models: ["REPLACE_PROVIDER/REPLACE_MODEL"],
+      inputCacheSemantics: "separate",
+      barWidth: 12,
+      count: DEFAULT_COUNT,
+    },
+  },
+};
+
+/** Create the starter config once, without replacing an existing config across Pi processes. */
+export async function ensure_config(directory: string): Promise<void> {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const target = join(directory, "config.json");
+  try {
+    await access(target);
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  const temporary = join(directory, `.config-${process.pid}-${randomUUID()}.tmp`);
+  try {
+    const file = await open(temporary, "wx", 0o600);
+    try {
+      await file.writeFile(JSON.stringify(STARTER_CONFIG, null, 2) + "\n");
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    // A hard link publishes the fully written file atomically and fails if another
+    // session (or the user) created config.json first. Rename would overwrite it.
+    try {
+      await link(temporary, target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  } finally {
+    await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
 }
 
 export async function load_config(directory: string): Promise<QuotaConfig> {

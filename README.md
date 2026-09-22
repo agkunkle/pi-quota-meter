@@ -7,33 +7,36 @@ one state file; usage from other programs is not observed.
 
 ## Install and configure
 
-Requirements: Node 24+ (Pi's current runtime). For a local package checkout:
+Requirements: Node 24+ (Pi's current runtime). Install from GitHub:
 
 ```bash
-cd /home/user/workspace/pi-quota-meter
-npm install
-pi install /home/user/workspace/pi-quota-meter
+pi install git:github.com/agkunkle/pi-quota-meter
 ```
 
-Or test without changing Pi's installed packages using `pi -e ./src/index.ts`. Installing the
-package globally (not project-local) makes it available to every Pi session. Installation has not
-been performed by this project; it changes the user's Pi settings. Restart Pi (or `/reload` in
-sessions that load this package) after installation/config changes.
+Or for a local checkout, run `npm install` then `pi install /path/to/pi-quota-meter`.
+Installing globally (not project-locally) makes it available to every Pi session. On the **first
+Pi session start after install** (or `/reload`), the extension creates
+`~/.pi/agent/account-quota/config.json` if missing, along with its directory. This is a Pi
+session-start action, not an npm postinstall script, so installing the package alone may not
+create the file until Pi starts. It never overwrites an existing config, even if that config is
+invalid. The file location follows `PI_CODING_AGENT_DIR` if set.
 
-Create `~/.pi/agent/account-quota/config.json` (or under the directory selected by
-`PI_CODING_AGENT_DIR`) and replace the **placeholder** model slug with the precise
-`provider/model` ID shown by Pi's `/model` or model registry. Capacity and refill rate are your
-chosen inputs; no provider's rate-limit algorithm is assumed:
+The generated config is valid but intentionally **unconfigured**: its model slug is a placeholder,
+so no normal provider response will debit the example bucket. Replace the placeholder with the
+precise `provider/model` ID shown by Pi's `/model` or model registry, and set your own capacity,
+refill rate, and input/cache semantics. The example meter is illustrative, not a live account
+balance or a provider quota claim. Run
+`/reload` in open Pi sessions after editing. The starter config is equivalent to:
 
 ```json
 {
   "color": "#b7cabd",
   "refreshIntervalSeconds": 5,
   "buckets": {
-    "hosted-main": {
+    "example": {
       "capacity": 600000,
       "refillPerMinute": 300000,
-      "models": ["YOUR_HOSTED_PROVIDER_ID/YOUR_HOSTED_MODEL_ID"],
+      "models": ["REPLACE_PROVIDER/REPLACE_MODEL"],
       "inputCacheSemantics": "separate",
       "barWidth": 12,
       "count": {
@@ -51,7 +54,7 @@ chosen inputs; no provider's rate-limit algorithm is assumed:
 Each `models` entry is a `provider/model` slug. The provider matches exactly; the model may
 contain `/` and supports `*` globs (for example `hosted-provider/model-*`). Old `providers`
 arrays are rejected so an outdated config cannot silently debit the wrong model. Leave local
-models out of these allowlists; an absent config means no metering. Multiple named buckets can
+models out of these allowlists; an absent config is generated at session start. Multiple named buckets can
 be configured, but overlapping mappings for the same provider/model are rejected at debit time
 (warning, no debit) rather than double-debited.
 All sessions sharing a bucket should use identical config; reload them together after changes.
@@ -98,6 +101,7 @@ Readers never lock: the atomic rename exposes a complete snapshot. They calculat
 memory on each refresh and never write for the display. Lock acquisition is bounded; errors produce
 warnings/unavailable status, never block a provider request intentionally.
 
+`state.json` and `state.lock` are created lazily on the first debit, not at installation.
 Missing state initializes at full capacity. Corrupt state is shown as unavailable until the next
 successful debit; under lock that debit resets the invalid state at full capacity and records
 its usage. This recovery loses prior unknown usage; inspect `/quota` after warnings. Changing
@@ -131,4 +135,5 @@ npm test
 ```
 
 The test suite covers refill/clamping, accounting without double counting, slug filtering,
-missing/corrupt state recovery, cross-process simultaneous debits, and status lifecycle.
+first-start config creation, missing/corrupt state recovery, cross-process simultaneous debits,
+and status lifecycle.
